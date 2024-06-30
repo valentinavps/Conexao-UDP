@@ -1,19 +1,17 @@
-#include "common.h"
-
-#include <pthread.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <time.h>
-
-#include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <pthread.h>
+#include <unistd.h>
 
 #define BUFSZ 1024
-#define NUM_QUOTES 5  // Defina o número total de citações
 
-char *quotes1[NUM_QUOTES] = {
+// Frases a serem enviadas para os clientes
+char* frases1[] = {
     "Um anel para a todos governar",
     "Na terra de Mordor onde as sombras se deitam",
     "Não é o que temos, mas o que fazemos com o que temos",
@@ -21,7 +19,7 @@ char *quotes1[NUM_QUOTES] = {
     "O mundo está mudando, senhor Frodo"
 };
 
-char *quotes2[NUM_QUOTES] = {
+char* frases2[] = {
     "Vou fazer uma oferta que ele não pode recusar",
     "Mantenha seus amigos por perto e seus inimigos mais perto ainda",
     "É melhor ser temido que amado",
@@ -29,7 +27,7 @@ char *quotes2[NUM_QUOTES] = {
     "Nunca deixe que ninguém saiba o que você está pensando"
 };
 
-char *quotes3[NUM_QUOTES] = {
+char* frases3[] = {
     "Primeira regra do Clube da Luta: você não fala sobre o Clube da Luta",
     "Segunda regra do Clube da Luta: você não fala sobre o Clube da Luta",
     "O que você possui acabará possuindo você",
@@ -37,90 +35,156 @@ char *quotes3[NUM_QUOTES] = {
     "Escolha suas lutas com sabedoria"
 };
 
-struct client_info {
-    int sockfd;
-    struct sockaddr_storage caddr;
-    socklen_t caddrlen;
+// Estrutura para armazenar os dados do cliente
+struct client_data {
+    int csock;
+    int escolha;
+    struct sockaddr_in client_addr;
 };
 
-void usage(int argc, char **argv){
-    printf("usage: %s <v4|v6> <server port>\n", argv[0]);
-    printf("example: %s v4 51511\n", argv[0]);
+// Variáveis para contagem de threads ativas
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+int active_threads = 0;
+
+// Função executada pela thread do cliente
+void *client_thread(void *data) {
+    pthread_mutex_lock(&mutex);
+    active_threads++;
+    pthread_mutex_unlock(&mutex);
+
+    struct client_data *cdata = (struct client_data *)data;
+
+    char buf[BUFSZ];
+    memset(buf, 0, BUFSZ);
+
+    // Seleciona as frases a serem enviadas com base na escolha do cliente
+    switch(cdata->escolha) {
+        case 1:
+            snprintf(buf, BUFSZ, "%s;%s;%s;%s;%s", frases1[0], frases1[1], frases1[2], frases1[3], frases1[4]);
+            break;
+        case 2:
+            snprintf(buf, BUFSZ, "%s;%s;%s;%s;%s", frases2[0], frases2[1], frases2[2], frases2[3], frases2[4]);
+            break;
+        case 3:
+            snprintf(buf, BUFSZ, "%s;%s;%s;%s;%s", frases3[0], frases3[1], frases3[2], frases3[3], frases3[4]);
+            break;
+        default:
+            snprintf(buf, BUFSZ, "Escolha inválida.");
+            break;
+    }
+
+    // Envia as frases para o cliente
+    size_t count = sendto(cdata->csock, buf, strlen(buf), 0, (struct sockaddr*)&cdata->client_addr, sizeof(cdata->client_addr));
+    if (count == -1) {
+        perror("sendto");
+    }
+    usleep(15000000); // Pausa de 15 segundos
+    close(cdata->csock);
+    free(cdata);
+
+    pthread_mutex_lock(&mutex);
+    active_threads--;
+    pthread_mutex_unlock(&mutex);
+
+    pthread_exit(EXIT_SUCCESS);
+}
+
+// Função executada pela thread de monitoramento
+void *monitor_thread(void *arg) {
+    while (1) {
+        
+        sleep(3); // Espera 3 segundos
+
+        pthread_mutex_lock(&mutex);
+        printf("Clientes conectados: %d\n", active_threads); // Imprime o número de clientes conectados
+        pthread_mutex_unlock(&mutex);
+    }
+    return NULL;
+}
+
+// Função para exibir o uso correto do programa
+void usage(int argc, char **argv) {
+    printf("usage: %s <ipv4|ipv6> <server port>\n", argv[0]);
+    printf("example: %s ipv4 51511\n", argv[0]);
     exit(EXIT_FAILURE);
 }
 
-void send_quotes(int s, struct sockaddr *caddr, socklen_t caddrlen, char *quotes[]) {
-    for (int i = 0; i < NUM_QUOTES; i++) {
-        ssize_t count = sendto(s, quotes[i], strlen(quotes[i]) + 1, 0, caddr, caddrlen);
-        if (count == -1) {
-            logexit("sendto");
-        }
-        sleep(3); // Delay de 3 segundos entre as mensagens
-    }
-}
+int main(int argc, char **argv) {
+    struct sockaddr_in server_addr, client_addr;
+    char buffer[1024];
+    socklen_t addr_size;
 
-int main(int argc, char **argv){
+    // Verifica se o número de argumentos é suficiente
     if (argc < 3) {
         usage(argc, argv);
     }
 
     struct sockaddr_storage storage;
+    // Inicializa a estrutura de endereço do servidor
     if (0 != server_sockaddr_init(argv[1], argv[2], &storage)) {
         usage(argc, argv);
     }
 
-    int s;
-    s = socket(storage.ss_family, SOCK_DGRAM, 0); // Changed to SOCK_DGRAM for UDP
-    if (s == -1) {
+    int sockfd;
+    // Cria o socket do servidor
+    sockfd = socket(storage.ss_family, SOCK_DGRAM, 0);
+    if (sockfd == -1) {
         logexit("socket");
     }
 
     int enable = 1;
-    if (0 != setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int))) {
+    // Configura o socket para reutilização de endereço
+    if (0 != setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int))) {
         logexit("setsockopt");
     }
 
     struct sockaddr *addr = (struct sockaddr *)(&storage);
-    if (0 != bind(s, addr, sizeof(storage))) {
+    // Associa o socket ao endereço e porta especificados
+    if (0 != bind(sockfd, addr, sizeof(storage))) {
         logexit("bind");
     }
 
-    char addrstr[BUFSZ];
-    addrtostr(addr, addrstr, BUFSZ);
-    printf("bound to %s, waiting for messages\n", addrstr);
+    // Criação da thread de monitoramento
+    pthread_t monitor_tid;
+    pthread_create(&monitor_tid, NULL, monitor_thread, NULL);
+    pthread_detach(monitor_tid);
 
     while (1) {
+        
+        printf("Aguardando mensagens...\n");
         struct sockaddr_storage cstorage;
         struct sockaddr *caddr = (struct sockaddr *)(&cstorage);
         socklen_t caddrlen = sizeof(cstorage);
 
-        char buf[BUFSZ];
-        memset(buf, 0, BUFSZ);
+        bzero(buffer, 1024);
+        addr_size = sizeof(client_addr);
+        // Recebe dados do cliente
+        recvfrom(sockfd, buffer, 1024, 0, (struct sockaddr*)&client_addr, &addr_size);
 
-        ssize_t count = recvfrom(s, buf, BUFSZ - 1, 0, caddr, &caddrlen); // Use recvfrom for UDP
-        if (count == -1) {
-            logexit("recvfrom");
+        struct client_data *cdata = malloc(sizeof(*cdata));
+        if (!cdata) {
+            perror("malloc");
+            exit(1);
         }
 
-        char caddrstr[BUFSZ];
-        addrtostr(caddr, caddrstr, BUFSZ);
-        printf("[msg] %s, %d bytes: %s\n", caddrstr, (int)count, buf);
-
-        if (strcmp(buf, "1\n") == 0) {
-            send_quotes(s, caddr, caddrlen, quotes1);
-        } else if (strcmp(buf, "2\n") == 0) {
-            send_quotes(s, caddr, caddrlen, quotes2);
-        } else if (strcmp(buf, "3\n") == 0) {
-            send_quotes(s, caddr, caddrlen, quotes3);
-        } else {
-            sprintf(buf, "remote endpoint: %.1000s\n", caddrstr);
-            count = sendto(s, buf, strlen(buf) + 1, 0, caddr, caddrlen); // Use sendto for UDP
-            if (count == -1) {
-                logexit("sendto");
-            }
+        cdata->csock = socket(AF_INET, SOCK_DGRAM, 0);
+        if (cdata->csock < 0) {
+            perror("[-]socket error");
+            free(cdata);
+            continue;
         }
+        cdata->client_addr = client_addr;
+        // Converte a escolha do cliente para inteiro
+        cdata->escolha = atoi(buffer);
+
+        pthread_t tid;
+        // Cria uma thread para lidar com o cliente
+        pthread_create(&tid, NULL, client_thread, cdata);
+        // Torna a thread destacada
+        pthread_detach(tid);
     }
 
-    close(s);
-    exit(EXIT_SUCCESS);
+    // Fecha o socket do servidor
+    close(sockfd);
+    return 0;
 }
