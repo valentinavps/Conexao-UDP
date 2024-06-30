@@ -27,7 +27,6 @@ char *quotes2[NUM_QUOTES] = {
     "É melhor ser temido que amado",
     "A vingança é um prato que se come frio",
     "Nunca deixe que ninguém saiba o que você está pensando"
-
 };
 
 char *quotes3[NUM_QUOTES] = {
@@ -37,7 +36,6 @@ char *quotes3[NUM_QUOTES] = {
     "É apenas depois de perder tudo que somos livres para fazer qualquer coisa",
     "Escolha suas lutas com sabedoria"
 };
-
 
 struct client_info {
     int sockfd;
@@ -51,20 +49,14 @@ void usage(int argc, char **argv){
     exit(EXIT_FAILURE);
 }
 
-char *get_random_quote1() {
-    srand(time(NULL)); // Initialize random seed
-    int idx = rand() % NUM_QUOTES;
-    return quotes1[idx];
-}
-char *get_random_quote2() {
-    srand(time(NULL)); // Initialize random seed
-    int idx = rand() % NUM_QUOTES;
-    return quotes2[idx];
-}
-char *get_random_quote3() {
-    srand(time(NULL)); // Initialize random seed
-    int idx = rand() % NUM_QUOTES;
-    return quotes3[idx];
+void send_quotes(int s, struct sockaddr *caddr, socklen_t caddrlen, char *quotes[]) {
+    for (int i = 0; i < NUM_QUOTES; i++) {
+        ssize_t count = sendto(s, quotes[i], strlen(quotes[i]) + 1, 0, caddr, caddrlen);
+        if (count == -1) {
+            logexit("sendto");
+        }
+        sleep(3); // Delay de 3 segundos entre as mensagens
+    }
 }
 
 int main(int argc, char **argv){
@@ -114,36 +106,19 @@ int main(int argc, char **argv){
         addrtostr(caddr, caddrstr, BUFSZ);
         printf("[msg] %s, %d bytes: %s\n", caddrstr, (int)count, buf);
 
-        // Verifica se a mensagem recebida é '1' e envia uma frase aleatória de volta
         if (strcmp(buf, "1\n") == 0) {
-            char *quote = get_random_quote1();
-            count = sendto(s, quote, strlen(quote) + 1, 0, caddr, caddrlen); // Use sendto for UDP
-            if (count == -1) {
-                logexit("sendto");
-            }
-        }else if (strcmp(buf, "2\n") == 0){
-            char *quote = get_random_quote2();
-            count = sendto(s, quote, strlen(quote) + 1, 0, caddr, caddrlen); // Use sendto for UDP
-            if (count == -1) {
-                logexit("sendto");}
-
-        }else if (strcmp(buf, "3\n") == 0)
-        {
-            char *quote = get_random_quote3();
-            count = sendto(s, quote, strlen(quote) + 1, 0, caddr, caddrlen); // Use sendto for UDP
-            if (count == -1) {
-                logexit("sendto");
-        }
-        
+            send_quotes(s, caddr, caddrlen, quotes1);
+        } else if (strcmp(buf, "2\n") == 0) {
+            send_quotes(s, caddr, caddrlen, quotes2);
+        } else if (strcmp(buf, "3\n") == 0) {
+            send_quotes(s, caddr, caddrlen, quotes3);
         } else {
-            // Caso contrário, envia a resposta padrão indicando o endpoint remoto
             sprintf(buf, "remote endpoint: %.1000s\n", caddrstr);
             count = sendto(s, buf, strlen(buf) + 1, 0, caddr, caddrlen); // Use sendto for UDP
             if (count == -1) {
                 logexit("sendto");
             }
         }
-
     }
 
     close(s);
