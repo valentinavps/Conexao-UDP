@@ -5,16 +5,66 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
 
 #define BUFSZ 1024
+#define NUM_QUOTES 5  // Defina o número total de citações
+
+char *quotes1[NUM_QUOTES] = {
+    "Um anel para a todos governar",
+    "Na terra de Mordor onde as sombras se deitam",
+    "Não é o que temos, mas o que fazemos com o que temos",
+    "Não há mal que sempre dure",
+    "O mundo está mudando, senhor Frodo"
+};
+
+char *quotes2[NUM_QUOTES] = {
+    "Vou fazer uma oferta que ele não pode recusar",
+    "Mantenha seus amigos por perto e seus inimigos mais perto ainda",
+    "É melhor ser temido que amado",
+    "A vingança é um prato que se come frio",
+    "Nunca deixe que ninguém saiba o que você está pensando"
+
+};
+
+char *quotes3[NUM_QUOTES] = {
+    "Primeira regra do Clube da Luta: você não fala sobre o Clube da Luta",
+    "Segunda regra do Clube da Luta: você não fala sobre o Clube da Luta",
+    "O que você possui acabará possuindo você",
+    "É apenas depois de perder tudo que somos livres para fazer qualquer coisa",
+    "Escolha suas lutas com sabedoria"
+};
+
+
+struct client_info {
+    int sockfd;
+    struct sockaddr_storage caddr;
+    socklen_t caddrlen;
+};
 
 void usage(int argc, char **argv){
     printf("usage: %s <v4|v6> <server port>\n", argv[0]);
     printf("example: %s v4 51511\n", argv[0]);
     exit(EXIT_FAILURE);
+}
+
+char *get_random_quote1() {
+    srand(time(NULL)); // Initialize random seed
+    int idx = rand() % NUM_QUOTES;
+    return quotes1[idx];
+}
+char *get_random_quote2() {
+    srand(time(NULL)); // Initialize random seed
+    int idx = rand() % NUM_QUOTES;
+    return quotes2[idx];
+}
+char *get_random_quote3() {
+    srand(time(NULL)); // Initialize random seed
+    int idx = rand() % NUM_QUOTES;
+    return quotes3[idx];
 }
 
 int main(int argc, char **argv){
@@ -64,11 +114,36 @@ int main(int argc, char **argv){
         addrtostr(caddr, caddrstr, BUFSZ);
         printf("[msg] %s, %d bytes: %s\n", caddrstr, (int)count, buf);
 
-        sprintf(buf, "remote endpoint: %.1000s\n", caddrstr);
-        count = sendto(s, buf, strlen(buf) + 1, 0, caddr, caddrlen); // Use sendto for UDP
-        if (count == -1) {
-            logexit("sendto");
+        // Verifica se a mensagem recebida é '1' e envia uma frase aleatória de volta
+        if (strcmp(buf, "1\n") == 0) {
+            char *quote = get_random_quote1();
+            count = sendto(s, quote, strlen(quote) + 1, 0, caddr, caddrlen); // Use sendto for UDP
+            if (count == -1) {
+                logexit("sendto");
+            }
+        }else if (strcmp(buf, "2\n") == 0){
+            char *quote = get_random_quote2();
+            count = sendto(s, quote, strlen(quote) + 1, 0, caddr, caddrlen); // Use sendto for UDP
+            if (count == -1) {
+                logexit("sendto");}
+
+        }else if (strcmp(buf, "3\n") == 0)
+        {
+            char *quote = get_random_quote3();
+            count = sendto(s, quote, strlen(quote) + 1, 0, caddr, caddrlen); // Use sendto for UDP
+            if (count == -1) {
+                logexit("sendto");
         }
+        
+        } else {
+            // Caso contrário, envia a resposta padrão indicando o endpoint remoto
+            sprintf(buf, "remote endpoint: %.1000s\n", caddrstr);
+            count = sendto(s, buf, strlen(buf) + 1, 0, caddr, caddrlen); // Use sendto for UDP
+            if (count == -1) {
+                logexit("sendto");
+            }
+        }
+
     }
 
     close(s);

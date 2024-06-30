@@ -17,6 +17,16 @@ void usage(int argc, char **argv) {
 
 #define BUFSZ 1024
 
+void display_menu() {
+    printf("\n=== MENU ===\n");
+    printf("1. Senhor dos Anéis\n");
+    printf("2. O Poderoso Chefão\n");
+    printf("3. Clube da Luta\n");
+    printf("0. Sair\n");
+    printf("=============\n");
+    printf("Escolha uma opção: ");
+}
+
 int main(int argc, char **argv) { 
     if (argc < 3) {
         usage(argc, argv);
@@ -40,10 +50,11 @@ int main(int argc, char **argv) {
     addrtostr(addr, addrstr, BUFSZ);
 
     printf("ready to send to %s\n", addrstr); // Updated message to reflect UDP context
+    
 
     char buf[BUFSZ];
     memset(buf, 0, BUFSZ);
-    printf("mensagem> ");
+    display_menu();
     fgets(buf, BUFSZ-1, stdin);
 
     size_t count = sendto(s, buf, strlen(buf)+1, 0, addr, sizeof(storage)); // Use sendto for UDP
